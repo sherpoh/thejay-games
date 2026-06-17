@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Jay Hunt</title>
+
+<style>
+body{
+    margin:0;
+    overflow:hidden;
+    font-family:Arial;
+    background: linear-gradient(#74c0fc,#d0ebff);
+}
+
+#ui{
+    position:fixed;
+    top:10px;
+    left:10px;
+    z-index:10;
+    font-weight:bold;
+}
+
+#gameArea{
+    width:100vw;
+    height:100vh;
+    position:relative;
+    overflow:hidden;
+}
+
+.jay{
+    position:absolute;
+    font-size:32px;
+    cursor:pointer;
+    user-select:none;
+    transition:transform .08s;
+}
+
+.jay:active{ transform:scale(0.7); }
+
+.particle{
+    position:absolute;
+    font-size:18px;
+    pointer-events:none;
+    animation:pop .6s ease-out forwards;
+}
+
+@keyframes pop{
+    0%{transform:translate(0,0) scale(1); opacity:1;}
+    100%{transform:translate(var(--x),var(--y)) scale(0); opacity:0;}
+}
+
+#gameOver{
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    background:rgba(0,0,0,0.7);
+    color:white;
+    padding:20px;
+    display:none;
+    text-align:center;
+}
+
+button{
+    padding:10px 20px;
+    cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+Score: <span id="score">0</span> |
+Lives: <span id="lives">3</span> |
+Round: <span id="round">1</span> |
+Time: <span id="time">15</span> |
+Combo: <span id="combo">0</span>
+</div>
+
+<div id="gameArea"></div>
+
+<div id="gameOver">
+<h1>GAME OVER</h1>
+<p id="final"></p>
+<button onclick="restart()">Restart</button>
+</div>
+
+<script>
+let score=0, lives=3, round=1, time=15;
+let combo=0;
+let running=true;
+
+let spawnRate=1100;
+let fakeChance=0.12;
+
+const game=document.getElementById("gameArea");
+
+const ctx=new (window.AudioContext||window.webkitAudioContext)();
+
+function beep(type){
+    let o=ctx.createOscillator();
+    let g=ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+
+    if(type==="good") o.frequency.value=700;
+    if(type==="gold") o.frequency.value=1000;
+    if(type==="bad") o.frequency.value=180;
+
+    g.gain.value=0.05;
+    o.start();
+    o.stop(ctx.currentTime+0.08);
+}
+
+function ui(){
+    scoreEl.textContent=score;
+    livesEl.textContent=lives;
+    roundEl.textContent=round;
+    timeEl.textContent=time;
+    comboEl.textContent=combo;
+}
+
+const scoreEl=document.getElementById("score");
+const livesEl=document.getElementById("lives");
+const roundEl=document.getElementById("round");
+const timeEl=document.getElementById("time");
+const comboEl=document.getElementById("combo");
+
+function particle(x,y,text,color){
+    for(let i=0;i<6;i++){
+        let p=document.createElement("div");
+        p.className="particle";
+        p.textContent=text;
+        p.style.left=x+"px";
+        p.style.top=y+"px";
+        p.style.color=color;
+
+        let dx=(Math.random()-0.5)*80;
+        let dy=(Math.random()-0.5)*80;
+
+        p.style.setProperty("--x",dx+"px");
+        p.style.setProperty("--y",dy+"px");
+
+        game.appendChild(p);
+        setTimeout(()=>p.remove(),600);
+    }
+}
+
+function spawn(){
+    if(!running) return;
+
+    const j=document.createElement("div");
+    j.className="jay";
+
+    let r=Math.random();
+
+    if(r<1-fakeChance-0.1){
+        j.textContent="🐦";
+        j.dataset.type="normal";
+    } else if(r<1-fakeChance){
+        j.textContent="⭐";
+        j.dataset.type="gold";
+    } else {
+        j.textContent="💀";
+        j.dataset.type="fake";
+    }
+
+    j.style.left=Math.random()*(innerWidth-50)+"px";
+    j.style.top=Math.random()*(innerHeight-50)+"px";
+
+    j.onclick=(e)=>{
+        e.stopPropagation();
+
+        if(j.dataset.type==="normal"){
+            score+=1;
+            combo++;
+            beep("good");
+            particle(j.offsetLeft,j.offsetTop,"+1","white");
+        }
+
+        if(j.dataset.type==="gold"){
+            score+=5;
+            combo+=2;
+            beep("gold");
+            particle(j.offsetLeft,j.offsetTop,"+5","gold");
+        }
+
+        if(j.dataset.type==="fake"){
+            lives--;
+            combo=0;
+            beep("bad");
+            shake();
+        }
+
+        ui();
+        check();
+
+        j.remove();
+    };
+
+    game.appendChild(j);
+
+    setTimeout(()=>j.remove(),1200);
+}
+
+game.onclick=()=>{
+    if(!running) return;
+    lives--;
+    combo=0;
+    beep("bad");
+    shake();
+    ui();
+    check();
+};
+
+function shake(){
+    game.style.transform="translate(5px,0)";
+    setTimeout(()=>game.style.transform="translate(-5px,0)",50);
+    setTimeout(()=>game.style.transform="translate(0,0)",100);
+}
+
+function check(){
+    if(lives<=0){
+        running=false;
+        document.getElementById("gameOver").style.display="block";
+        document.getElementById("final").textContent=
+            `Score: ${score} | Round: ${round}`;
+    }
+}
+
+function nextRound(){
+    round++;
+    time=15;
+
+    spawnRate=Math.max(350,spawnRate-120);
+    fakeChance=Math.min(0.35,fakeChance+0.02);
+
+    clearInterval(loop);
+    loop=setInterval(spawn,spawnRate);
+
+    ui();
+}
+
+setInterval(()=>{
+    if(!running) return;
+
+    time--;
+    if(time<=0) nextRound();
+
+    ui();
+},1000);
+
+let loop=setInterval(spawn,spawnRate);
+
+function restart(){
+    score=0;
+    lives=3;
+    round=1;
+    time=15;
+    combo=0;
+    spawnRate=1100;
+    fakeChance=0.12;
+    running=true;
+
+    game.innerHTML="";
+    document.getElementById("gameOver").style.display="none";
+
+    clearInterval(loop);
+    loop=setInterval(spawn,spawnRate);
+
+    ui();
+}
+
+ui();
+</script>
+
+</body>
+</html>
